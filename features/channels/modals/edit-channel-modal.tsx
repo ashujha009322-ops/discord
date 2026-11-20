@@ -22,6 +22,7 @@ export function EditChannelModal() {
 
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
+  const [parentId, setParentId] = useState<string | null>(null);
   const [slowmodeSeconds, setSlowmodeSeconds] = useState(0);
   const [isPrivate, setIsPrivate] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -31,6 +32,7 @@ export function EditChannelModal() {
     if (channel) {
       setName(channel.name || "");
       setTopic(channel.topic || "");
+      setParentId((channel as any).parentId ?? null);
       setSlowmodeSeconds(channel.slowmodeSeconds || 0);
       setIsPrivate(channel.isPrivate || false);
     }
@@ -52,6 +54,7 @@ export function EditChannelModal() {
       const res = await updateChannelAction({
         id: channel.id,
         guildId,
+        parentId,
         name: name.toLowerCase().trim(),
         topic: topic || null,
         slowmodeSeconds,
