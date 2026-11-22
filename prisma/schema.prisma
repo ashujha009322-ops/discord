@@ -103,11 +103,27 @@ model User {
   auditActions          AuditLog[]                   @relation("AuditActor")
   notifications         Notification[]
   sessions              UserSession[]
+  pushSubscriptions PushSubscription[]
   pinsCreated           MessagePin[]                 @relation("PinCreator")
   mentions              MessageMention[]             @relation("MentionedUser")
   overwrites            ChannelPermissionOverwrite[] @relation("OverwriteMember")
   voiceSessions         VoiceParticipant[]
   pollVotes             PollVote[]
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model UserSession {
@@ -395,7 +411,7 @@ model Relationship {
 
 model Invite {
   id          String           @id @default(uuid()) @db.Uuid
- code        String           @unique @db.VarChar(16) 
+ code        String           @unique @db.VarChar(16)
   guildId     String?          @db.Uuid
   channelId   String?          @db.Uuid
   createdById String           @db.Uuid

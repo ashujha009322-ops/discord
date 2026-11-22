@@ -1,80 +1,59 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import type { DirectoryUser } from "@/lib/calling-users";
-import { useOnlineUsers } from "@/hooks/useOnlineUsers";
-import { useCallSignaling } from "@/hooks/useCallSignaling";
-import CallRequestModal from "@/components/CallRequestModal";
-import ActiveCallRoom from "@/components/ActiveCallRoom";
+import React, { useMemo, useState } from "react";
+import { useCalling } from "@/components/CallingProvider";
+import { subscribeUserToCallPush } from "@/lib/push-client";
 
 export default function CallingPage() {
-  const [currentUser, setCurrentUser] = useState<DirectoryUser | null>(null);
-  const [allUsers, setAllUsers] = useState<DirectoryUser[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const loadDirectory = useCallback(async () => {
-    setLoading(true);
-    setErrorMsg(null);
-
-    try {
-      const res = await fetch("/api/calling/users", { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setErrorMsg(
-          typeof data?.error === "string"
-            ? data.error
-            : `Request failed with status ${res.status}.`,
-        );
-        setLoading(false);
-        return;
-      }
-
-      setCurrentUser(data.currentUser);
-      setAllUsers(Array.isArray(data.users) ? data.users : []);
-    } catch (err) {
-      console.error("[CallingPage loadDirectory]", err);
-      setErrorMsg("Network error while loading users. Check your connection.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadDirectory();
-  }, [loadDirectory]);
-
-  const { onlineUserIds, presenceError } = useOnlineUsers(
-    currentUser?.id ?? null,
-  );
+  const [pushStatus, setPushStatus] = useState<string | null>(null);
+  const [isEnablingPush, setIsEnablingPush] = useState(false);
 
   const {
+    allUsers,
+    onlineUserIds,
+    directoryLoading,
+    directoryError,
+    presenceError,
     peerStatus,
     peerError,
     outgoingCall,
     incomingCall,
-    callError,
     activeCall,
-    localStream,
-    remoteStream,
-    isMuted,
-    isCameraOff,
+    refreshDirectory,
     requestCall,
-    cancelOutgoingCall,
-    acceptIncomingCall,
-    declineIncomingCall,
-    hangUpCall,
-    toggleMute,
-    toggleCamera,
-    clearSignalingState,
-  } = useCallSignaling({ currentUser, onlineUserIds });
+  } = useCalling();
 
   const onlineUsers = useMemo(
     () => allUsers.filter((u) => onlineUserIds.has(u.id)),
     [allUsers, onlineUserIds],
   );
+
+  const handleEnablePush = async () => {
+    if (isEnablingPush) return;
+
+    setIsEnablingPush(true);
+    setPushStatus("Enabling push alerts...");
+
+    try {
+      const result = await subscribeUserToCallPush();
+
+      setPushStatus(
+        result.ok
+          ? "Background call notifications enabled on this device."
+          : result.error || "Could not enable push notifications.",
+      );
+    } catch (err: unknown) {
+      console.error("[CallingPage enable push]", err);
+
+      setPushStatus(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while enabling push notifications.",
+      );
+    } finally {
+      setIsEnablingPush(false);
+    }
+  };
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
@@ -86,15 +65,45 @@ export default function CallingPage() {
             <span className="font-medium text-neutral-700">{peerStatus}</span>
           </p>
         </div>
+
         <button
           type="button"
-          onClick={() => void loadDirectory()}
-          disabled={loading}
+          onClick={() => void refreshDirectory()}
+          disabled={directoryLoading}
           className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
         >
-          {loading ? "Refreshing..." : "Refresh"}
+          {directoryLoading ? "Refreshing..." : "Refresh"}
         </button>
       </div>
+
+      {/* Push Notifications */}
+      <section className="mb-6 rounded-lg border p-4">
+        <h2 className="font-semibold">Background Call Notifications</h2>
+
+        <p className="mt-1 text-sm text-neutral-500">
+          Enable push notifications to receive incoming call alerts even when
+          this page is in the background.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => void handleEnablePush()}
+          disabled={isEnablingPush}
+          className="mt-3 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isEnablingPush ? "Enabling..." : "Enable Push Notifications"}
+        </button>
+
+        {pushStatus && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mt-3 text-sm text-neutral-600"
+          >
+            {pushStatus}
+          </p>
+        )}
+      </section>
 
       {(presenceError || peerError) && (
         <div
@@ -105,21 +114,22 @@ export default function CallingPage() {
         </div>
       )}
 
-      {errorMsg ? (
+      {directoryError ? (
         <div
           role="alert"
           className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800"
         >
-          <p className="mb-3 font-medium">{errorMsg}</p>
+          <p className="mb-3 font-medium">{directoryError}</p>
+
           <button
             type="button"
-            onClick={() => void loadDirectory()}
+            onClick={() => void refreshDirectory()}
             className="rounded bg-red-700 px-3 py-1.5 text-white hover:bg-red-800"
           >
             Retry
           </button>
         </div>
-      ) : loading ? (
+      ) : directoryLoading ? (
         <p className="text-sm text-neutral-500">Loading online users...</p>
       ) : onlineUsers.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-neutral-500">
@@ -129,6 +139,7 @@ export default function CallingPage() {
         <ul className="divide-y rounded-lg border">
           {onlineUsers.map((user) => {
             const label = user.displayName || user.username;
+
             const disabled =
               peerStatus !== "ready" ||
               Boolean(outgoingCall || incomingCall || activeCall);
@@ -143,6 +154,7 @@ export default function CallingPage() {
                     aria-label="Online"
                     className="h-2.5 w-2.5 rounded-full bg-emerald-500"
                   />
+
                   <div>
                     <div className="font-medium">{label}</div>
                     <div className="text-xs text-neutral-500">
@@ -160,6 +172,7 @@ export default function CallingPage() {
                   >
                     Voice Call
                   </button>
+
                   <button
                     type="button"
                     disabled={disabled}
@@ -173,29 +186,6 @@ export default function CallingPage() {
             );
           })}
         </ul>
-      )}
-
-      <CallRequestModal
-        incomingCall={incomingCall}
-        outgoingCall={outgoingCall}
-        callError={callError}
-        onAccept={() => void acceptIncomingCall()}
-        onDecline={() => void declineIncomingCall()}
-        onCancelOutgoing={() => void cancelOutgoingCall()}
-        onDismissError={clearSignalingState}
-      />
-
-      {activeCall && (
-        <ActiveCallRoom
-          activeCall={activeCall}
-          localStream={localStream}
-          remoteStream={remoteStream}
-          isMuted={isMuted}
-          isCameraOff={isCameraOff}
-          onToggleMute={toggleMute}
-          onToggleCamera={toggleCamera}
-          onHangUp={() => void hangUpCall()}
-        />
       )}
     </main>
   );
