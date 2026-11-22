@@ -28,6 +28,7 @@ import {
 } from "@/store/useCallingStore";
 import CallRequestModal from "@/components/CallRequestModal";
 import ActiveCallRoom from "@/components/ActiveCallRoom";
+import { syncExistingPushSubscription } from "@/lib/push-client";
 
 const RING_TIMEOUT_MS = 30_000;
 
@@ -199,13 +200,26 @@ export function CallingProvider({ children }: { children: React.ReactNode }) {
 
   // Register service worker after browser mount
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!("serviceWorker" in navigator)) return;
+    if (!currentUser?.id) return;
+    if (typeof window === "undefined" || !("serviceWorker" in navigator))
+      return;
 
-    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((err) => {
-      console.error("[ServiceWorker registration failed]", err);
-    });
-  }, []);
+    let cancelled = false;
+
+    void navigator.serviceWorker
+      .register("/sw.js", { scope: "/" })
+      .then(() => {
+        if (cancelled) return;
+        return syncExistingPushSubscription();
+      })
+      .catch((err) => {
+        console.error("[SW + push auto-sync]", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id]);
 
   // Stop ringtone whenever incomingCall clears
   useEffect(() => {

@@ -1,11 +1,26 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useCalling } from "@/components/CallingProvider";
-import { subscribeUserToCallPush } from "@/lib/push-client";
+import {
+  getPushPermissionState,
+  subscribeUserToCallPush,
+  syncExistingPushSubscription,
+} from "@/lib/push-client";
+
+type PushUIStatus =
+  | "checking"
+  | "inactive"
+  | "enabling"
+  | "enabled"
+  | "denied"
+  | "error";
 
 export default function CallingPage() {
-  const [pushStatus, setPushStatus] = useState<string | null>(null);
+  const [pushUIStatus, setPushUIStatus] = useState<PushUIStatus>("checking");
+
+  const [pushError, setPushError] = useState<string | null>(null);
+
   const [isEnablingPush, setIsEnablingPush] = useState(false);
 
   const {
@@ -28,27 +43,89 @@ export default function CallingPage() {
     [allUsers, onlineUserIds],
   );
 
+  /**
+   * Quietly check and sync existing push subscription.
+   * Never requests notification permission.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkPushStatus() {
+      const permission = getPushPermissionState();
+
+      if (permission === "unsupported") {
+        if (!cancelled) {
+          setPushUIStatus("inactive");
+          setPushError("Push notifications are not supported in this browser.");
+        }
+        return;
+      }
+
+      if (permission === "denied") {
+        if (!cancelled) {
+          setPushUIStatus("denied");
+        }
+        return;
+      }
+
+      if (permission !== "granted") {
+        if (!cancelled) {
+          setPushUIStatus("inactive");
+        }
+        return;
+      }
+
+      const result = await syncExistingPushSubscription();
+
+      if (cancelled) return;
+
+      if (result.synced) {
+        setPushUIStatus("enabled");
+        setPushError(null);
+      } else {
+        setPushUIStatus("inactive");
+        setPushError(result.error || null);
+      }
+    }
+
+    void checkPushStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Explicit user action to enable call alerts.
+   */
   const handleEnablePush = async () => {
     if (isEnablingPush) return;
 
     setIsEnablingPush(true);
-    setPushStatus("Enabling push alerts...");
+    setPushUIStatus("enabling");
+    setPushError(null);
 
     try {
       const result = await subscribeUserToCallPush();
 
-      setPushStatus(
-        result.ok
-          ? "Background call notifications enabled on this device."
-          : result.error || "Could not enable push notifications.",
-      );
+      if (result.ok) {
+        setPushUIStatus("enabled");
+        setPushError(null);
+      } else {
+        const permission = getPushPermissionState();
+
+        setPushUIStatus(permission === "denied" ? "denied" : "inactive");
+
+        setPushError(result.error || "Could not enable call alerts.");
+      }
     } catch (err: unknown) {
       console.error("[CallingPage enable push]", err);
 
-      setPushStatus(
+      setPushUIStatus("error");
+      setPushError(
         err instanceof Error
           ? err.message
-          : "Something went wrong while enabling push notifications.",
+          : "Something went wrong while enabling call alerts.",
       );
     } finally {
       setIsEnablingPush(false);
@@ -60,6 +137,7 @@ export default function CallingPage() {
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Online Users</h1>
+
           <p className="text-sm text-neutral-500">
             Peer status:{" "}
             <span className="font-medium text-neutral-700">{peerStatus}</span>
@@ -76,33 +154,66 @@ export default function CallingPage() {
         </button>
       </div>
 
-      {/* Push Notifications */}
-      <section className="mb-6 rounded-lg border p-4">
-        <h2 className="font-semibold">Background Call Notifications</h2>
+      {/* Call Alerts */}
+      <section
+        className="mb-6 rounded-lg border p-4"
+        aria-label="Call notification settings"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="font-semibold">Background Call Alerts</h2>
 
-        <p className="mt-1 text-sm text-neutral-500">
-          Enable push notifications to receive incoming call alerts even when
-          this page is in the background.
-        </p>
+            {pushUIStatus === "enabled" ? (
+              <p
+                role="status"
+                aria-live="polite"
+                className="mt-1 text-sm text-emerald-700"
+              >
+                Call alerts are enabled on this device.
+              </p>
+            ) : pushUIStatus === "denied" ? (
+              <p className="mt-1 text-sm text-amber-700">
+                Notifications are blocked. Enable them in your browser settings
+                to receive background call alerts.
+              </p>
+            ) : pushUIStatus === "checking" ? (
+              <p className="mt-1 text-sm text-neutral-500">
+                Checking call alert settings...
+              </p>
+            ) : pushUIStatus === "enabling" ? (
+              <p className="mt-1 text-sm text-neutral-500">
+                Enabling call alerts...
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-neutral-500">
+                Enable call alerts to receive incoming call notifications when
+                this page is in the background.
+              </p>
+            )}
 
-        <button
-          type="button"
-          onClick={() => void handleEnablePush()}
-          disabled={isEnablingPush}
-          className="mt-3 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isEnablingPush ? "Enabling..." : "Enable Push Notifications"}
-        </button>
+            {pushError && pushUIStatus !== "denied" && (
+              <p role="status" className="mt-1 text-xs text-amber-700">
+                {pushError}
+              </p>
+            )}
+          </div>
 
-        {pushStatus && (
-          <p
-            role="status"
-            aria-live="polite"
-            className="mt-3 text-sm text-neutral-600"
-          >
-            {pushStatus}
-          </p>
-        )}
+          {pushUIStatus !== "enabled" && (
+            <button
+              type="button"
+              onClick={() => void handleEnablePush()}
+              disabled={
+                isEnablingPush ||
+                pushUIStatus === "checking" ||
+                pushUIStatus === "denied" ||
+                getPushPermissionState() === "unsupported"
+              }
+              className="shrink-0 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isEnablingPush ? "Enabling..." : "Enable Call Alerts"}
+            </button>
+          )}
+        </div>
       </section>
 
       {(presenceError || peerError) && (
@@ -157,6 +268,7 @@ export default function CallingPage() {
 
                   <div>
                     <div className="font-medium">{label}</div>
+
                     <div className="text-xs text-neutral-500">
                       @{user.username}
                     </div>
