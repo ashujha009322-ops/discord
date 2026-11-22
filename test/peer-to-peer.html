@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PeerJS Voice & Video Test</title>
+    <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 760px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      .row {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+      }
+      input {
+        flex: 1;
+        min-width: 200px;
+        padding: 0.5rem;
+      }
+      button {
+        padding: 0.5rem 0.9rem;
+        cursor: pointer;
+      }
+      .videos {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+      video {
+        width: 100%;
+        background: #111;
+        border-radius: 6px;
+        min-height: 200px;
+      }
+      #log {
+        border: 1px solid #ccc;
+        padding: 0.75rem;
+        min-height: 150px;
+        background: #fafafa;
+        white-space: pre-line;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>PeerJS Voice & Video Call Test</h2>
+    <p><strong>My Peer ID:</strong> <span id="my-id">Connecting...</span></p>
+
+    <div class="row">
+      <input
+        id="remote-id"
+        type="text"
+        placeholder="Paste remote Peer ID here"
+      />
+      <button id="voice-call-btn" type="button">Voice Call</button>
+      <button id="video-call-btn" type="button">Video Call</button>
+      <button id="hangup-btn" type="button">Hang Up</button>
+    </div>
+
+    <div class="videos">
+      <div>
+        <div><strong>Local</strong></div>
+        <video id="local-video" autoplay playsinline muted></video>
+      </div>
+      <div>
+        <div><strong>Remote</strong></div>
+        <video id="remote-video" autoplay playsinline></video>
+      </div>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+      const myIdEl = document.getElementById("my-id");
+      const remoteIdInput = document.getElementById("remote-id");
+      const voiceCallBtn = document.getElementById("voice-call-btn");
+      const videoCallBtn = document.getElementById("video-call-btn");
+      const hangupBtn = document.getElementById("hangup-btn");
+      const localVideo = document.getElementById("local-video");
+      const remoteVideo = document.getElementById("remote-video");
+      const logEl = document.getElementById("log");
+
+      function log(text) {
+        logEl.textContent += text + "\n";
+      }
+
+      const peer = new Peer();
+      let localStream = null;
+      let activeCall = null;
+
+      function stopLocalStream() {
+        if (localStream) {
+          localStream.getTracks().forEach((track) => track.stop());
+          localStream = null;
+        }
+        localVideo.srcObject = null;
+      }
+
+      function clearRemoteStream() {
+        remoteVideo.srcObject = null;
+      }
+
+      function hangUp() {
+        if (activeCall) {
+          activeCall.close();
+          activeCall = null;
+        }
+        stopLocalStream();
+        clearRemoteStream();
+        log("Call ended.");
+      }
+
+      function bindCall(call) {
+        if (activeCall && activeCall !== call) {
+          activeCall.close();
+        }
+        activeCall = call;
+
+        call.on("stream", (remoteStream) => {
+          log(`Receiving media stream from ${call.peer}`);
+          remoteVideo.srcObject = remoteStream;
+        });
+
+        call.on("close", () => {
+          log(`Call closed with ${call.peer}`);
+          clearRemoteStream();
+          activeCall = null;
+        });
+
+        call.on("error", (err) => {
+          log(`Call error: ${err}`);
+        });
+      }
+
+      async function getMedia(constraints) {
+        stopLocalStream();
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        localStream = stream;
+        localVideo.srcObject = stream;
+        return stream;
+      }
+
+      peer.on("open", (id) => {
+        myIdEl.textContent = id;
+        log(`Ready. Your ID is ${id}`);
+      });
+
+      // Incoming voice or video call
+      peer.on("call", async (call) => {
+        try {
+          log(`Incoming call from ${call.peer}...`);
+          // Match requested media if video track is present, otherwise audio-only
+          const wantsVideo = call.metadata?.type === "video";
+          const stream = await getMedia({ audio: true, video: wantsVideo });
+          bindCall(call);
+          call.answer(stream);
+          log(`Answered (${wantsVideo ? "video" : "voice"}) call.`);
+        } catch (err) {
+          log(`Failed to answer call: ${err.message}`);
+        }
+      });
+
+      peer.on("error", (err) => {
+        log(`Peer error: ${err.type} - ${err.message}`);
+      });
+
+      async function startCall(withVideo) {
+        const targetId = remoteIdInput.value.trim();
+        if (!targetId) {
+          log("Enter a remote Peer ID first.");
+          return;
+        }
+        try {
+          log(
+            `Requesting ${withVideo ? "microphone & camera" : "microphone"}...`,
+          );
+          const stream = await getMedia({ audio: true, video: withVideo });
+          const call = peer.call(targetId, stream, {
+            metadata: { type: withVideo ? "video" : "audio" },
+          });
+          bindCall(call);
+          log(`Calling ${targetId} (${withVideo ? "video" : "voice"})...`);
+        } catch (err) {
+          log(`Could not start call: ${err.message}`);
+        }
+      }
+
+      voiceCallBtn.addEventListener("click", () => startCall(false));
+      videoCallBtn.addEventListener("click", () => startCall(true));
+      hangupBtn.addEventListener("click", hangUp);
+    </script>
+  </body>
+</html>
