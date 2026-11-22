@@ -5,7 +5,12 @@ const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
   },
-  serverExternalPackages: ["@prisma/client", "pg", "@prisma/adapter-pg"],
+  serverExternalPackages: [
+    "@prisma/client",
+    "pg",
+    "@prisma/adapter-pg",
+    "web-push",
+  ],
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
