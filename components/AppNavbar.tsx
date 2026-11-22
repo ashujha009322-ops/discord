@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import {
   Home,
@@ -31,7 +31,10 @@ const navigation = [
   },
 ];
 
-export default function AppNavbar() {
+function NavbarContent() {
+  // Keep your existing AppNavbar implementation here.
+  // No changes to the navigation, authentication, or mobile menu.
+
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -190,5 +193,17 @@ export default function AppNavbar() {
         </div>
       )}
     </header>
+  );
+}
+
+export default function AppNavbar() {
+  return (
+    <Suspense
+      fallback={
+        <header className="sticky top-0 z-50 h-16 w-full border-b border-white/[0.08] bg-background/80 backdrop-blur-xl" />
+      }
+    >
+      <NavbarContent />
+    </Suspense>
   );
 }
