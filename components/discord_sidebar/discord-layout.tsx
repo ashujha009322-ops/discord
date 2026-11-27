@@ -25,42 +25,7 @@ import {
   Inbox,
   HelpCircle,
 } from "lucide-react";
-
-const mockMembers: ServerMember[] = [
-  { user: currentUser, role: "Admin" },
-  {
-    user: {
-      id: "u-3",
-      name: "Zara V",
-      username: "zara_v",
-      avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Zara",
-      status: "online",
-      customStatus: "Coding Next.js components...",
-    },
-    role: "Moderator",
-  },
-  {
-    user: {
-      id: "u-5",
-      name: "Neila",
-      username: "neila",
-      avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Neila",
-      status: "online",
-      customStatus: "Pursuing a degree in Blorbo Husbandry.",
-    },
-    role: "Online",
-  },
-  {
-    user: {
-      id: "u-1",
-      name: "WAHD",
-      username: "wahd",
-      avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=WAHD",
-      status: "offline",
-    },
-    role: "Offline",
-  },
-];
+import { MemberModals } from "../member-list/member-modals";
 
 interface DiscordLayoutProps {
   initialServers: Server[];
@@ -134,7 +99,7 @@ export function DiscordLayout({ initialServers }: DiscordLayoutProps) {
     <div className="flex h-screen w-full bg-[#313338] overflow-hidden antialiased font-sans">
       {/* Global Modals Container */}
       <ModalProvider />
-
+      <MemberModals />
       <ServerRail
         servers={servers}
         activeServerId={activeServerId}
@@ -241,7 +206,7 @@ export function DiscordLayout({ initialServers }: DiscordLayoutProps) {
           </div>
 
           {activeServerId !== null && showMemberList && (
-            <MemberList members={mockMembers} />
+            <MemberList guildId={activeServerId} />
           )}
         </div>
       </main>

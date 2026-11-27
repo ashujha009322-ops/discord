@@ -1,89 +1,140 @@
 "use client";
 
-import React from "react";
-import { ServerMember } from "../types";
+import React, { useEffect, useState } from "react";
+import { Crown } from "lucide-react";
+import { useMemberStore } from "@/store/use-member-store";
+import { GuildMemberDTO } from "@/features/memberList/member";
+import { intColorToHex } from "@/features/memberList/storage";
 import { cn } from "@/lib/utils";
+import { MemberActionDropdown } from "../../member-list/member-action-dropdown";
 
 interface MemberListProps {
-  members: ServerMember[];
+  guildId: string;
 }
 
-export function MemberList({ members }: MemberListProps) {
-  const statusColors = {
-    online: "bg-[#23a55a]",
-    idle: "bg-[#f0b232]",
-    dnd: "bg-[#f23f43]",
-    offline: "bg-[#80848e]",
-  };
+function MemberRow({ member }: { member: GuildMemberDTO }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const viewerPermissions = useMemberStore((s) => s.viewerPermissions);
+  const openProfileModal = useMemberStore((s) => s.openProfileModal);
 
-  const onlineMembers = members.filter((m) => m.user.status !== "offline");
-  const offlineMembers = members.filter((m) => m.user.status === "offline");
+  const topRole = member.roles.find((r) => r.color && r.color !== 0);
+  const nameColor = topRole ? intColorToHex(topRole.color) : undefined;
+
+  const initials = member.effectiveName.slice(0, 2).toUpperCase();
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => openProfileModal(member.guildId, member.userId)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openProfileModal(member.guildId, member.userId);
+        }
+      }}
+      className={cn(
+        "group w-full flex items-center px-2 py-1.5 rounded cursor-pointer transition",
+        menuOpen ? "bg-[#35373c]" : "hover:bg-[#35373c]",
+      )}
+    >
+      {/* Avatar */}
+      <div className="relative mr-3 shrink-0">
+        {member.avatarUrl ? (
+          <img
+            src={member.avatarUrl}
+            alt={member.effectiveName}
+            className="w-8 h-8 rounded-full object-cover"
+          />
+        ) : (
+          <div className="w-8 h-8 rounded-full bg-[#5865f2] text-white text-xs font-semibold flex items-center justify-center">
+            {initials}
+          </div>
+        )}
+      </div>
+
+      {/* Name + Badges */}
+      <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-1">
+        <span
+          style={nameColor ? { color: nameColor } : undefined}
+          className={cn(
+            "text-sm font-medium truncate",
+            !nameColor && "text-[#dbdee1] group-hover:text-white",
+          )}
+        >
+          {member.effectiveName}
+        </span>
+
+        {member.isOwner && (
+          <Crown
+            className="w-3.5 h-3.5 text-[#f0b232] shrink-0"
+            aria-label="Server Owner"
+          />
+        )}
+
+        {member.isBot && (
+          <span className="px-1 py-0.2 text-[10px] font-bold uppercase rounded bg-[#5865f2] text-white shrink-0 leading-tight">
+            Bot
+          </span>
+        )}
+      </div>
+
+      {/* Hover ChevronDown Dropdown */}
+      <MemberActionDropdown
+        member={member}
+        viewerPermissions={viewerPermissions}
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+      />
+    </div>
+  );
+}
+
+export function MemberList({ guildId }: MemberListProps) {
+  const members = useMemberStore((s) => s.members);
+  const isLoading = useMemberStore((s) => s.isLoadingMembers);
+  const error = useMemberStore((s) => s.membersError);
+  const fetchGuildMembers = useMemberStore((s) => s.fetchGuildMembers);
+
+  useEffect(() => {
+    if (guildId) {
+      fetchGuildMembers(guildId);
+    }
+  }, [guildId, fetchGuildMembers]);
 
   return (
     <aside className="w-60 bg-[#2b2d31] flex flex-col shrink-0 border-l border-[#1f2023] px-3 py-4 select-none overflow-y-auto no-scrollbar">
-      {/* Online Group */}
-      <div className="space-y-1 mb-6">
+      <div className="space-y-1">
         <h3 className="text-xs font-bold text-[#949ba4] tracking-wider uppercase px-1 mb-2">
-          Online — {onlineMembers.length}
+          Members — {members.length}
         </h3>
-        {onlineMembers.map((member) => (
-          <button
-            key={member.user.id}
-            className="w-full flex items-center px-2 py-1.5 rounded hover:bg-[#35373c] transition group"
-          >
-            <div className="relative mr-3 shrink-0">
-              <img
-                src={member.user.avatarUrl}
-                alt={member.user.name}
-                className="w-8 h-8 rounded-full object-cover"
-              />
-              <span
-                className={cn(
-                  "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-[2.5px] border-[#2b2d31]",
-                  statusColors[member.user.status],
-                )}
-              />
-            </div>
-            <div className="flex flex-col text-left truncate">
-              <span className="text-sm font-medium text-[#dbdee1] group-hover:text-white truncate">
-                {member.user.name}
-              </span>
-              {member.user.customStatus && (
-                <span className="text-[11px] text-[#949ba4] truncate">
-                  {member.user.customStatus}
-                </span>
-              )}
-            </div>
-          </button>
-        ))}
-      </div>
 
-      {/* Offline Group */}
-      {offlineMembers.length > 0 && (
-        <div className="space-y-1">
-          <h3 className="text-xs font-bold text-[#949ba4] tracking-wider uppercase px-1 mb-2">
-            Offline — {offlineMembers.length}
-          </h3>
-          {offlineMembers.map((member) => (
-            <button
-              key={member.user.id}
-              className="w-full flex items-center px-2 py-1.5 rounded hover:bg-[#35373c] transition group opacity-60 hover:opacity-100"
-            >
-              <div className="relative mr-3 shrink-0">
-                <img
-                  src={member.user.avatarUrl}
-                  alt={member.user.name}
-                  className="w-8 h-8 rounded-full object-cover"
-                />
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-[2.5px] border-[#2b2d31] bg-[#80848e]" />
+        {isLoading && members.length === 0 && (
+          <div className="space-y-2 px-1">
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="flex items-center gap-3 py-1.5 animate-pulse"
+              >
+                <div className="w-8 h-8 rounded-full bg-[#35373c]" />
+                <div className="h-3.5 w-28 rounded bg-[#35373c]" />
               </div>
-              <span className="text-sm font-medium text-[#dbdee1] group-hover:text-white truncate">
-                {member.user.name}
-              </span>
-            </button>
+            ))}
+          </div>
+        )}
+
+        {error && (
+          <div className="px-2 py-3 text-xs text-[#f23f43] bg-[#f23f43]/10 rounded">
+            {error}
+          </div>
+        )}
+
+        {!isLoading &&
+          !error &&
+          members.map((member) => (
+            <MemberRow key={member.userId} member={member} />
           ))}
-        </div>
-      )}
+      </div>
     </aside>
   );
 }
